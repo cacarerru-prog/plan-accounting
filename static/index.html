@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Растения — учёт</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f4f6f9;color:#1a1a2e;font-size:14px}
+.app{display:grid;grid-template-columns:210px 1fr;min-height:100vh}
+.sidebar{background:#1a1a2e;color:#fff;display:flex;flex-direction:column}
+.logo{padding:22px 18px 18px;font-size:15px;font-weight:700;letter-spacing:.3px;border-bottom:1px solid rgba(255,255,255,.08)}
+.logo em{font-style:normal;color:#4CAF50}
+.nav{padding:10px 0}
+.nav-item{padding:11px 18px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:13px;color:rgba(255,255,255,.6);border-left:3px solid transparent;transition:all .15s}
+.nav-item:hover{color:#fff;background:rgba(255,255,255,.06)}
+.nav-item.active{color:#fff;background:rgba(76,175,80,.12);border-left-color:#4CAF50}
+.nav-icon{font-size:15px;width:18px;text-align:center}
+.main{padding:28px;overflow-y:auto}
+.page{display:none}.page.active{display:block}
+.page-title{font-size:19px;font-weight:700;margin-bottom:20px}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
+.metrics-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px}
+.metric{background:#fff;border-radius:10px;padding:16px 18px;border:1px solid #e8eaf0}
+.metric-label{font-size:11px;color:#9097a8;margin-bottom:8px;font-weight:500;text-transform:uppercase;letter-spacing:.5px}
+.metric-value{font-size:22px;font-weight:700}
+.green{color:#2e7d32}.red{color:#c62828}.blue{color:#1565c0}.purple{color:#6a1b9a}
+.card{background:#fff;border-radius:10px;border:1px solid #e8eaf0;margin-bottom:16px;overflow:hidden}
+.card-head{padding:13px 16px;border-bottom:1px solid #f0f2f7;font-weight:600;font-size:13px;display:flex;justify-content:space-between;align-items:center;background:#fafbfc}
+.card-body{padding:16px}
+.form-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:4px;min-width:80px}
+.field.grow{flex:1}
+.field label{font-size:11px;color:#9097a8;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+input,select{padding:7px 10px;border:1.5px solid #e0e3eb;border-radius:7px;font-size:13px;font-family:inherit;color:#1a1a2e;background:#fff;outline:none;transition:border .15s;width:100%}
+input:focus,select:focus{border-color:#4CAF50}
+input[type=file]{padding:5px 8px;font-size:12px}
+.btn{padding:8px 16px;border:none;border-radius:7px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:600;transition:all .15s;white-space:nowrap}
+.btn-add{background:#4CAF50;color:#fff}.btn-add:hover{background:#388E3C}
+.btn-import{background:#1565c0;color:#fff}.btn-import:hover{background:#0d47a1}
+.btn-del{background:none;border:1.5px solid #e0e3eb;color:#c62828;padding:5px 10px;border-radius:6px;font-size:13px;cursor:pointer}.btn-del:hover{background:#ffebee}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:9px 12px;font-size:11px;font-weight:700;color:#9097a8;text-transform:uppercase;letter-spacing:.4px;border-bottom:2px solid #f0f2f7;background:#fafbfc}
+td{padding:10px 12px;border-bottom:1px solid #f4f6f9;color:#2d3142}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafbfc}
+.badge{display:inline-block;padding:2px 9px;border-radius:5px;font-size:11px;font-weight:600}
+.b-green{background:#e8f5e9;color:#2e7d32}.b-blue{background:#e3f2fd;color:#1565c0}
+.b-amber{background:#fff8e1;color:#e65100}.b-red{background:#ffebee;color:#c62828}
+.b-purple{background:#f3e5f5;color:#6a1b9a}.b-gray{background:#f5f5f5;color:#616161}
+.qty-ok{background:#e8f5e9;color:#2e7d32;padding:2px 9px;border-radius:5px;font-size:12px;font-weight:600}
+.qty-low{background:#fff8e1;color:#e65100;padding:2px 9px;border-radius:5px;font-size:12px;font-weight:600}
+.qty-zero{background:#ffebee;color:#c62828;padding:2px 9px;border-radius:5px;font-size:12px;font-weight:600}
+.empty{text-align:center;padding:30px;color:#b0bec5;font-size:13px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.channel-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f4f6f9;font-size:13px}
+.channel-row:last-child{border-bottom:none}
+.top-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f4f6f9}
+.top-row:last-child{border-bottom:none}
+.top-num{width:22px;height:22px;border-radius:50%;background:#f0f2f7;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#9097a8;flex-shrink:0}
+.top-name{flex:1;font-weight:500}.top-sum{font-weight:700;color:#2e7d32}
+.profit-bar{height:6px;background:#f0f2f7;border-radius:3px;margin-top:10px;overflow:hidden}
+.profit-fill{height:100%;border-radius:3px;background:#4CAF50;transition:width .5s}
+.margin-label{font-size:11px;color:#9097a8;margin-top:5px}
+.salary-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #f4f6f9}
+.salary-row:last-child{border-bottom:none}
+.salary-avatar{width:36px;height:36px;border-radius:50%;background:#e3f2fd;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#1565c0;flex-shrink:0}
+.salary-name{font-weight:600;font-size:14px}.salary-pct{font-size:12px;color:#9097a8}
+.salary-amount{font-weight:700;font-size:16px;color:#2e7d32}
+.import-result{padding:10px 14px;background:#e8f5e9;border-radius:8px;font-size:13px;color:#2e7d32;margin-top:10px;display:none}
+.import-result.error{background:#ffebee;color:#c62828}
+.sep{height:1px;background:#f0f2f7;margin:16px 0}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="sidebar">
+    <div class="logo">🌿 <em>Растения</em> — учёт</div>
+    <div class="nav">
+      <div class="nav-item active" onclick="showPage('dashboard')"><span class="nav-icon">📊</span> Итог</div>
+      <div class="nav-item" onclick="showPage('sales')"><span class="nav-icon">💰</span> Продажи</div>
+      <div class="nav-item" onclick="showPage('expenses')"><span class="nav-icon">💸</span> Расходы</div>
+      <div class="nav-item" onclick="showPage('stock')"><span class="nav-icon">🌱</span> Остатки</div>
+      <div class="nav-item" onclick="showPage('salaries')"><span class="nav-icon">👥</span> Зарплаты</div>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- ИТОГ -->
+    <div id="page-dashboard" class="page active">
+      <div class="page-title">Итог</div>
+      <div class="metrics">
+        <div class="metric"><div class="metric-label">Выручка</div><div class="metric-value green" id="d-rev">—</div></div>
+        <div class="metric"><div class="metric-label">Расходы</div><div class="metric-value red" id="d-exp">—</div></div>
+        <div class="metric"><div class="metric-label">Прибыль (до зарплат)</div>
+          <div class="metric-value" id="d-profit">—</div>
+          <div class="profit-bar"><div class="profit-fill" id="profit-bar" style="width:0%"></div></div>
+          <div class="margin-label" id="margin-lbl">Маржа: —</div>
+        </div>
+        <div class="metric"><div class="metric-label">Чистая прибыль</div><div class="metric-value purple" id="d-net">—</div></div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head">Зарплаты этого периода</div>
+        <div class="card-body" id="dash-salaries"><div class="empty">Нет данных</div></div>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head">Продажи по каналам</div>
+          <div class="card-body" id="channels-list"><div class="empty">Нет данных</div></div>
+        </div>
+        <div class="card">
+          <div class="card-head">Топ-5 растений</div>
+          <div class="card-body" id="top-plants"><div class="empty">Нет данных</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ПРОДАЖИ -->
+    <div id="page-sales" class="page">
+      <div class="page-title">Продажи</div>
+      <div class="card">
+        <div class="card-head">Новая продажа</div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="field grow"><label>Растение</label><input id="s-plant" list="plant-list" placeholder="Начни вводить..."/></div>
+            <div class="field" style="width:80px"><label>Кол-во</label><input id="s-qty" type="number" min="1" value="1"/></div>
+            <div class="field" style="width:100px"><label>Цена, руб</label><input id="s-price" type="number" placeholder="25"/></div>
+            <div class="field" style="width:130px"><label>Канал</label>
+              <select id="s-channel"><option>Рынок</option><option>Kufar</option><option>Instagram</option><option>Опт</option><option>Другое</option></select>
+            </div>
+            <div class="field"><label>&nbsp;</label><button class="btn btn-add" onclick="addSale()">+ Добавить</button></div>
+          </div>
+          <datalist id="plant-list"></datalist>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">История продаж <span id="sales-total" style="font-weight:400;color:#9097a8;font-size:12px"></span></div>
+        <table><thead><tr><th>Дата</th><th>Растение</th><th>Кол-во</th><th>Цена</th><th>Сумма</th><th>Канал</th><th></th></tr></thead>
+        <tbody id="sales-body"><tr><td colspan="7" class="empty">Загрузка...</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- РАСХОДЫ -->
+    <div id="page-expenses" class="page">
+      <div class="page-title">Расходы</div>
+      <div class="card">
+        <div class="card-head">Новый расход</div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="field" style="width:180px"><label>Статья</label>
+              <select id="e-cat"><option>Закупка растений</option><option>Горшки/субстрат</option><option>Аренда места</option><option>Транспорт</option><option>Упаковка</option><option>Реклама</option><option>Прочее</option></select>
+            </div>
+            <div class="field grow"><label>Описание</label><input id="e-desc" placeholder="Туя Смарагд х10 шт"/></div>
+            <div class="field" style="width:120px"><label>Сумма, руб</label><input id="e-amount" type="number" placeholder="120"/></div>
+            <div class="field"><label>&nbsp;</label><button class="btn btn-add" onclick="addExpense()">+ Добавить</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">История расходов</div>
+        <table><thead><tr><th>Дата</th><th>Статья</th><th>Описание</th><th>Сумма</th><th></th></tr></thead>
+        <tbody id="exp-body"><tr><td colspan="5" class="empty">Загрузка...</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- ОСТАТКИ -->
+    <div id="page-stock" class="page">
+      <div class="page-title">Остатки</div>
+      <div class="card">
+        <div class="card-head">Импорт из Google Sheets (CSV)</div>
+        <div class="card-body">
+          <p style="font-size:13px;color:#9097a8;margin-bottom:12px">Скачай лист: Файл → Скачать → CSV. Выбери категорию и загрузи файл. Если растение уже есть — цена и количество обновятся.</p>
+          <div class="form-row">
+            <div class="field" style="width:160px"><label>Категория</label>
+              <select id="imp-cat"><option>Лиственные</option><option>Хвойные</option><option>Многолетние</option></select>
+            </div>
+            <div class="field grow"><label>CSV файл</label><input type="file" id="imp-file" accept=".csv"/></div>
+            <div class="field"><label>&nbsp;</label><button class="btn btn-import" onclick="importCSV()">⬆ Импортировать</button></div>
+          </div>
+          <div id="import-result" class="import-result"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">Добавить вручную</div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="field grow"><label>Название</label><input id="st-name" placeholder="Туя Смарагд С-3"/></div>
+            <div class="field" style="width:140px"><label>Категория</label>
+              <select id="st-cat"><option>Хвойные</option><option>Лиственные</option><option>Многолетние</option></select>
+            </div>
+            <div class="field" style="width:80px"><label>Размер</label><input id="st-size" placeholder="С-3"/></div>
+            <div class="field" style="width:100px"><label>Цена, руб</label><input id="st-price" type="number" placeholder="25"/></div>
+            <div class="field" style="width:80px"><label>Кол-во</label><input id="st-qty" type="number" value="10"/></div>
+            <div class="field"><label>&nbsp;</label><button class="btn btn-add" onclick="addPlant()">+ Добавить</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">Каталог <span id="stock-info" style="font-weight:400;color:#9097a8;font-size:12px"></span></div>
+        <table><thead><tr><th>Название</th><th>Категория</th><th>Размер</th><th>Цена</th><th>Остаток</th><th></th></tr></thead>
+        <tbody id="stock-body"><tr><td colspan="6" class="empty">Загрузка...</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- ЗАРПЛАТЫ -->
+    <div id="page-salaries" class="page">
+      <div class="page-title">Зарплаты</div>
+      <div class="metrics-3">
+        <div class="metric"><div class="metric-label">Прибыль (база расчёта)</div><div class="metric-value green" id="sal-profit">—</div></div>
+        <div class="metric"><div class="metric-label">Всего к выплате</div><div class="metric-value red" id="sal-total">—</div></div>
+        <div class="metric"><div class="metric-label">Остаток владельцу</div><div class="metric-value purple" id="sal-net">—</div></div>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head">Начисление</div>
+          <div class="card-body" id="salary-list"><div class="empty">Загрузка...</div></div>
+        </div>
+        <div class="card">
+          <div class="card-head">Сотрудники</div>
+          <div class="card-body">
+            <div id="employees-list"></div>
+            <div class="sep"></div>
+            <p style="font-size:12px;color:#9097a8;margin-bottom:10px">Добавить сотрудника</p>
+            <div class="form-row">
+              <div class="field grow"><label>Имя</label><input id="emp-name" placeholder="Имя"/></div>
+              <div class="field" style="width:90px"><label>% от прибыли</label><input id="emp-pct" type="number" min="1" max="100" value="10"/></div>
+              <div class="field"><label>&nbsp;</label><button class="btn btn-add" onclick="addEmployee()">+ Добавить</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const fmt = n => Number(n).toLocaleString('ru-RU',{minimumFractionDigits:0,maximumFractionDigits:0})+' руб.';
+const initials = name => name.trim().split(' ').map(w=>w[0]||'').join('').toUpperCase().slice(0,2);
+const chBadge = ch => {const m={Рынок:'b-green',Kufar:'b-blue',Instagram:'b-amber',Опт:'b-purple',Другое:'b-gray'};return `<span class="badge ${m[ch]||'b-gray'}">${ch}</span>`;};
+const catBadge = c => {const m={Хвойные:'b-blue',Лиственные:'b-green',Многолетние:'b-amber'};return `<span class="badge ${m[c]||'b-gray'}">${c}</span>`;};
+const qtyBadge = q => q===0?`<span class="qty-zero">Нет</span>`:q<5?`<span class="qty-low">${q} шт.</span>`:`<span class="qty-ok">${q} шт.</span>`;
+
+function showPage(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.querySelector(`[onclick="showPage('${name}')"]`).classList.add('active');
+  ({dashboard:loadStats,sales:()=>{loadSales();loadPlantsForList();},expenses:loadExpenses,stock:loadStock,salaries:loadSalaries}[name]||loadStats)();
+}
+
+async function loadStats(){
+  const s = await fetch('/api/stats').then(r=>r.json());
+  document.getElementById('d-rev').textContent=fmt(s.total_revenue);
+  document.getElementById('d-exp').textContent=fmt(s.total_expenses);
+  const pe=document.getElementById('d-profit');
+  pe.textContent=fmt(s.profit);
+  pe.className='metric-value '+(s.profit>=0?'green':'red');
+  document.getElementById('d-net').textContent=fmt(s.net_profit||0);
+  const margin=s.total_revenue>0?Math.round(s.profit/s.total_revenue*100):0;
+  document.getElementById('profit-bar').style.width=Math.max(0,Math.min(100,margin))+'%';
+  document.getElementById('margin-lbl').textContent='Маржа: '+margin+'%';
+  const ds=document.getElementById('dash-salaries');
+  if((s.salaries||[]).length){
+    ds.innerHTML=`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">`+
+      s.salaries.map(sal=>`<div style="text-align:center;padding:14px;background:#f8f9fa;border-radius:8px">
+        <div style="font-size:11px;color:#9097a8;margin-bottom:4px;font-weight:600;text-transform:uppercase">${sal.name}</div>
+        <div style="font-size:20px;font-weight:700;color:#2e7d32">${fmt(sal.amount)}</div>
+        <div style="font-size:11px;color:#9097a8">${sal.percent}% от прибыли</div>
+      </div>`).join('')+`</div>`;
+  } else {
+    ds.innerHTML='<div class="empty">Добавь продажи — зарплаты посчитаются автоматически</div>';
+  }
+  const ch=document.getElementById('channels-list');
+  const ent=Object.entries(s.by_channel||{}).sort((a,b)=>b[1]-a[1]);
+  ch.innerHTML=ent.length?ent.map(([k,v])=>`<div class="channel-row">${chBadge(k)}<strong>${fmt(v)}</strong></div>`).join(''):'<div class="empty">Нет продаж</div>';
+  const tp=document.getElementById('top-plants');
+  tp.innerHTML=(s.top_plants||[]).length?s.top_plants.map((p,i)=>
+    `<div class="top-row"><div class="top-num">${i+1}</div><div class="top-name">${p.name}</div><div class="top-sum">${fmt(p.total)}</div></div>`
+  ).join(''):'<div class="empty">Нет продаж</div>';
+}
+
+async function loadSales(){
+  const sales=await fetch('/api/sales').then(r=>r.json());
+  document.getElementById('sales-total').textContent=`Итого: ${fmt(sales.reduce((a,s)=>a+s.total,0))}`;
+  const tb=document.getElementById('sales-body');
+  tb.innerHTML=sales.length?sales.map(s=>`<tr><td>${s.date}</td><td><strong>${s.plant_name}</strong></td><td>${s.qty} шт.</td><td>${fmt(s.price)}</td><td><strong class="green">${fmt(s.total)}</strong></td><td>${chBadge(s.channel)}</td><td><button class="btn-del" onclick="delSale(${s.id})">×</button></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Продаж пока нет</td></tr>';
+}
+
+async function loadPlantsForList(){
+  const plants=await fetch('/api/plants').then(r=>r.json());
+  document.getElementById('plant-list').innerHTML=plants.map(p=>`<option value="${p.name}">`).join('');
+}
+
+async function addSale(){
+  const plant=document.getElementById('s-plant').value.trim();
+  const qty=parseInt(document.getElementById('s-qty').value)||1;
+  const price=parseFloat(document.getElementById('s-price').value)||0;
+  const channel=document.getElementById('s-channel').value;
+  if(!plant||!price){alert('Укажи растение и цену');return;}
+  await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plant_name:plant,qty,price,channel})});
+  document.getElementById('s-plant').value='';document.getElementById('s-price').value='';document.getElementById('s-qty').value='1';
+  loadSales();
+}
+
+async function delSale(id){await fetch(`/api/sales/${id}`,{method:'DELETE'});loadSales();}
+
+async function loadExpenses(){
+  const exp=await fetch('/api/expenses').then(r=>r.json());
+  const tb=document.getElementById('exp-body');
+  tb.innerHTML=exp.length?exp.map(e=>`<tr><td>${e.date}</td><td>${e.category}</td><td>${e.description||'—'}</td><td><strong class="red">${fmt(e.amount)}</strong></td><td><button class="btn-del" onclick="delExpense(${e.id})">×</button></td></tr>`).join(''):'<tr><td colspan="5" class="empty">Расходов пока нет</td></tr>';
+}
+
+async function addExpense(){
+  const cat=document.getElementById('e-cat').value;
+  const desc=document.getElementById('e-desc').value.trim();
+  const amount=parseFloat(document.getElementById('e-amount').value)||0;
+  if(!amount){alert('Укажи сумму');return;}
+  await fetch('/api/expenses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:cat,description:desc,amount})});
+  document.getElementById('e-desc').value='';document.getElementById('e-amount').value='';
+  loadExpenses();
+}
+
+async function delExpense(id){await fetch(`/api/expenses/${id}`,{method:'DELETE'});loadExpenses();}
+
+async function loadStock(){
+  const plants=await fetch('/api/plants').then(r=>r.json());
+  const low=plants.filter(p=>p.qty<5&&p.qty>0).length;
+  const zero=plants.filter(p=>p.qty===0).length;
+  document.getElementById('stock-info').textContent=`${plants.length} позиций${low?` · ${low} заканчивается`:''}${zero?` · ${zero} нет`:''}`;
+  const tb=document.getElementById('stock-body');
+  tb.innerHTML=plants.length?[...plants].sort((a,b)=>a.qty-b.qty).map(p=>`<tr><td><strong>${p.name}</strong></td><td>${catBadge(p.category)}</td><td>${p.size||'—'}</td><td>${fmt(p.price)}</td><td>${qtyBadge(p.qty)}</td><td><button class="btn-del" onclick="delPlant(${p.id})">×</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty">Импортируй CSV или добавь вручную</td></tr>';
+}
+
+async function addPlant(){
+  const name=document.getElementById('st-name').value.trim();
+  const category=document.getElementById('st-cat').value;
+  const size=document.getElementById('st-size').value.trim();
+  const price=parseFloat(document.getElementById('st-price').value)||0;
+  const qty=parseInt(document.getElementById('st-qty').value)||0;
+  if(!name){alert('Укажи название');return;}
+  await fetch('/api/plants',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,category,size,price,qty})});
+  document.getElementById('st-name').value='';document.getElementById('st-price').value='';document.getElementById('st-qty').value='10';
+  loadStock();
+}
+
+async function delPlant(id){if(!confirm('Удалить?'))return;await fetch(`/api/plants/${id}`,{method:'DELETE'});loadStock();}
+
+async function importCSV(){
+  const fileInput=document.getElementById('imp-file');
+  const category=document.getElementById('imp-cat').value;
+  const resultEl=document.getElementById('import-result');
+  if(!fileInput.files.length){alert('Выбери CSV файл');return;}
+  const formData=new FormData();
+  formData.append('file',fileInput.files[0]);
+  formData.append('category',category);
+  resultEl.style.display='none';
+  resultEl.className='import-result';
+  try{
+    const r=await fetch('/api/import/csv',{method:'POST',body:formData});
+    const data=await r.json();
+    resultEl.style.display='block';
+    resultEl.textContent=`✓ Импортировано: ${data.imported} растений. Всего в каталоге: ${data.total} позиций.`;
+    fileInput.value='';
+    loadStock();
+  }catch(e){
+    resultEl.style.display='block';
+    resultEl.className='import-result error';
+    resultEl.textContent='Ошибка импорта. Проверь формат файла.';
+  }
+}
+
+async function loadSalaries(){
+  const [stats,emps]=await Promise.all([fetch('/api/stats').then(r=>r.json()),fetch('/api/employees').then(r=>r.json())]);
+  document.getElementById('sal-profit').textContent=fmt(stats.profit);
+  document.getElementById('sal-total').textContent=fmt(stats.total_salaries||0);
+  document.getElementById('sal-net').textContent=fmt(stats.net_profit||0);
+  const sl=document.getElementById('salary-list');
+  sl.innerHTML=(stats.salaries||[]).length?stats.salaries.map(s=>`
+    <div class="salary-row">
+      <div class="salary-avatar">${initials(s.name)}</div>
+      <div style="flex:1"><div class="salary-name">${s.name}</div><div class="salary-pct">${s.percent}% от чистой прибыли</div></div>
+      <div class="salary-amount">${fmt(s.amount)}</div>
+    </div>`).join(''):'<div class="empty">Нет данных — добавь продажи</div>';
+  const el=document.getElementById('employees-list');
+  el.innerHTML=emps.map(e=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f4f6f9">
+      <div class="salary-avatar" style="width:30px;height:30px;font-size:11px">${initials(e.name)}</div>
+      <span style="flex:1;font-weight:500">${e.name}</span>
+      <span class="badge b-green">${e.percent}%</span>
+      <button class="btn-del" onclick="delEmployee(${e.id})">×</button>
+    </div>`).join('');
+}
+
+async function addEmployee(){
+  const name=document.getElementById('emp-name').value.trim();
+  const percent=parseFloat(document.getElementById('emp-pct').value)||0;
+  if(!name||!percent){alert('Укажи имя и процент');return;}
+  await fetch('/api/employees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,percent})});
+  document.getElementById('emp-name').value='';document.getElementById('emp-pct').value='10';
+  loadSalaries();
+}
+
+async function delEmployee(id){if(!confirm('Удалить сотрудника?'))return;await fetch(`/api/employees/${id}`,{method:'DELETE'});loadSalaries();}
+
+loadStats();
+</script>
+</body>
+</html>

@@ -181,59 +181,84 @@ func handlePlants(w http.ResponseWriter, r *http.Request) {
 }
 
 // ─── ОБРАБОТЧИКИ: ПРОДАЖИ ─────────────────────────────────
-
+// ─── ОБРАБОТЧИКИ: ПРОДАЖИ ─────────────────────────────────
 func handleSales(w http.ResponseWriter, r *http.Request) {
-	// GET
+	// GET /api/sales
 	if r.Method == http.MethodGet && r.URL.Path == "/api/sales" {
 		if db.Sales == nil {
 			writeJSON(w, []Sale{})
-		} else {
-			// последние 100 в обратном порядке
-			s := db.Sales
-			result := make([]Sale, len(s))
-			for i, v := range s {
-				result[len(s)-1-i] = v
-			}
-			if len(result) > 100 {
-				result = result[:100]
-			}
-			writeJSON(w, result)
+			return
 		}
+		// последние 100 в обратном порядке
+		s := db.Sales
+		result := make([]Sale, len(s))
+		for i, v := range s {
+			result[len(s)-1-i] = v
+		}
+		if len(result) > 100 {
+			result = result[:100]
+		}
+		writeJSON(w, result)
 		return
 	}
 
-	// POST
+	// POST /api/sales
 	if r.Method == http.MethodPost {
 		var s Sale
-		readJSON(r, &s)
+		if err := readJSON(r, &s); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+
+		// ищем растение на складе
+		var plant *Plant
+		for i := range db.Plants {
+			if strings.EqualFold(db.Plants[i].Name, s.PlantName) {
+				plant = &db.Plants[i]
+				break
+			}
+		}
+
+		if plant == nil {
+			http.Error(w, "Растение не найдено на складе", 400)
+			return
+		}
+
+		// проверяем, что хватает на складе
+		if s.Qty > plant.Qty {
+			http.Error(w, fmt.Sprintf("На складе только %d шт.", plant.Qty), 400)
+			return
+		}
+
+		// формируем запись продажи
 		s.ID = nextID()
 		s.Total = float64(s.Qty) * s.Price
 		if s.Date == "" {
 			s.Date = today()
 		}
+
+		// списываем с остатка
+		plant.Qty -= s.Qty
+
 		db.Sales = append(db.Sales, s)
-
-		// списываем остаток
-		for i, p := range db.Plants {
-			if strings.EqualFold(p.Name, s.PlantName) {
-				db.Plants[i].Qty -= s.Qty
-				if db.Plants[i].Qty < 0 {
-					db.Plants[i].Qty = 0
-				}
-				break
-			}
-		}
-
 		saveDB()
 		writeJSON(w, s)
 		return
 	}
 
-	// DELETE
+	// DELETE /api/sales/{id}
 	if r.Method == http.MethodDelete {
 		id := idFromPath(r.URL.Path, "/api/sales/")
 		for i, s := range db.Sales {
 			if s.ID == id {
+				// возвращаем на склад
+				for j, p := range db.Plants {
+					if strings.EqualFold(p.Name, s.PlantName) {
+						db.Plants[j].Qty += s.Qty
+						break
+					}
+				}
+
 				db.Sales = append(db.Sales[:i], db.Sales[i+1:]...)
 				break
 			}

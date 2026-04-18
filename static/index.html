@@ -181,10 +181,20 @@
     <div id="page-sales" class="page">
       <div class="page-header"><div class="page-title">Розничные продажи</div></div>
       <div class="card">
-        <div class="card-head">Новая продажа</div>
+        <div class="card-head">
+          Новая продажа
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:400;cursor:pointer">
+            <input type="checkbox" id="s-skip-stock" onchange="toggleSaleMode(this.checked)" style="width:auto"/>
+            Прочее (без списания со склада)
+          </label>
+        </div>
         <div class="card-body">
           <div class="form-row">
-            <div class="field grow"><label>Растение</label><input id="s-plant" list="plant-list" placeholder="Начни вводить..."/></div>
+            <div class="field grow">
+              <label id="s-plant-label">Растение</label>
+              <!-- datalist подключён для обычного режима; в режиме "прочее" — свободный ввод -->
+              <input id="s-plant" list="plant-list" placeholder="Начни вводить..."/>
+            </div>
             <div class="field" style="width:80px"><label>Кол-во</label><input id="s-qty" type="number" min="1" value="1"/></div>
             <div class="field" style="width:110px"><label>Цена, руб</label><input id="s-price" type="number" placeholder="25"/></div>
             <div class="field" style="width:140px"><label>Канал</label>
@@ -326,7 +336,7 @@
             <div class="field" style="width:160px"><label>Категория</label>
               <select id="imp-cat"><option>Лиственные</option><option>Хвойные</option><option>Многолетние</option></select>
             </div>
-            <div class="field grow"><label>CSV файл</label><input type="file" id="imp-file" accept=".csv"/></div>
+            <div class="field grow"><label>CSV файл(ы) — можно несколько</label><input type="file" id="imp-file" accept=".csv" multiple/></div>
             <div class="field"><label>&nbsp;</label><button class="btn btn-import" onclick="importCSV()">⬆ Импортировать</button></div>
           </div>
           <div id="import-result" class="import-result"></div>
@@ -463,6 +473,21 @@ async function loadStats() {
 }
 
 // ─── РОЗНИЧНЫЕ ПРОДАЖИ ────────────────────────────────────
+// Переключаем режим формы продажи: обычный (со склада) или прочее (свободный ввод)
+function toggleSaleMode(isMisc) {
+  const plantInput = document.getElementById('s-plant');
+  const label      = document.getElementById('s-plant-label');
+  if (isMisc) {
+    plantInput.removeAttribute('list'); // убираем подсказки склада
+    plantInput.placeholder = 'Название (услуга, прочее...)';
+    label.textContent = 'Наименование';
+  } else {
+    plantInput.setAttribute('list', 'plant-list');
+    plantInput.placeholder = 'Начни вводить...';
+    label.textContent = 'Растение';
+  }
+}
+
 async function loadSales() {
   const sales = await fetch('/api/sales').then(r=>r.json());
   document.getElementById('sales-total').textContent = `Итого: ${fmt(sales.reduce((a,s)=>a+s.total,0))}`;
@@ -486,17 +511,25 @@ async function loadPlantsForList() {
 }
 
 async function addSale() {
-  const plant   = document.getElementById('s-plant').value.trim();
-  const qty     = parseInt(document.getElementById('s-qty').value)||1;
-  const price   = parseFloat(document.getElementById('s-price').value)||0;
-  const channel = document.getElementById('s-channel').value;
-  if (!plant||!price) { alert('Укажи растение и цену'); return; }
-  const res = await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({plant_name:plant,qty,price,channel})});
+  const plant     = document.getElementById('s-plant').value.trim();
+  const qty       = parseInt(document.getElementById('s-qty').value)||1;
+  const price     = parseFloat(document.getElementById('s-price').value)||0;
+  const channel   = document.getElementById('s-channel').value;
+  const skipStock = document.getElementById('s-skip-stock').checked;
+
+  if (!plant)  { alert('Укажи название товара / услуги'); return; }
+  if (!price)  { alert('Укажи цену'); return; }
+
+  const res = await fetch('/api/sales', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({plant_name: plant, qty, price, channel, skip_stock: skipStock}),
+  });
   if (!res.ok) { alert(await res.text()); return; }
-  document.getElementById('s-plant').value='';
-  document.getElementById('s-price').value='';
-  document.getElementById('s-qty').value='1';
+
+  document.getElementById('s-plant').value = '';
+  document.getElementById('s-price').value = '';
+  document.getElementById('s-qty').value   = '1';
   loadSales();
 }
 
@@ -716,24 +749,41 @@ async function importCSV() {
   const fileInput = document.getElementById('imp-file');
   const category  = document.getElementById('imp-cat').value;
   const resultEl  = document.getElementById('import-result');
-  if (!fileInput.files.length) { alert('Выбери CSV файл'); return; }
-  const formData = new FormData();
-  formData.append('file', fileInput.files[0]);
-  formData.append('category', category);
+  if (!fileInput.files.length) { alert('Выбери CSV файл(ы)'); return; }
+
   resultEl.style.display = 'none';
   resultEl.className = 'import-result';
-  try {
-    const r = await fetch('/api/import/csv',{method:'POST',body:formData});
-    const data = await r.json();
-    resultEl.style.display = 'block';
-    resultEl.textContent = `✓ Импортировано: ${data.imported} растений. Всего: ${data.total}.`;
-    fileInput.value = '';
-    loadStock();
-  } catch(e) {
-    resultEl.style.display = 'block';
-    resultEl.className = 'import-result error';
-    resultEl.textContent = 'Ошибка импорта. Проверь формат файла.';
+
+  let totalImported = 0, totalSkipped = 0, lastTotal = 0, errors = [];
+
+  // Грузим каждый файл по очереди
+  for (const file of fileInput.files) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('category', category);
+    try {
+      const r = await fetch('/api/import/csv', {method:'POST', body:formData});
+      if (!r.ok) { errors.push(file.name); continue; }
+      const data = await r.json();
+      totalImported += data.imported;
+      totalSkipped  += data.skipped;
+      lastTotal      = data.total;
+    } catch(e) {
+      errors.push(file.name);
+    }
   }
+
+  resultEl.style.display = 'block';
+  if (errors.length) {
+    resultEl.className = 'import-result error';
+    resultEl.textContent = `Ошибка в файлах: ${errors.join(', ')}`;
+  } else {
+    const filesWord = fileInput.files.length > 1 ? `${fileInput.files.length} файла` : '1 файл';
+    const skipNote = totalSkipped > 0 ? ` (пропущено строк: ${totalSkipped} — возможно другой формат)` : '';
+    resultEl.textContent = `✓ Загружено ${filesWord}: импортировано ${totalImported} растений. Всего в каталоге: ${lastTotal}.${skipNote}`;
+  }
+  fileInput.value = '';
+  loadStock();
 }
 
 // ─── ЗАРПЛАТЫ ────────────────────────────────────────────

@@ -36,6 +36,9 @@ type Sale struct {
 	Total     float64 `json:"total"`
 	Channel   string  `json:"channel"`
 	Date      string  `json:"date"`
+	// SkipStock = true означает "прочее" — не проверять склад и не списывать.
+	// Используется для продаж услуг, работ или товаров не из каталога.
+	SkipStock bool `json:"skip_stock"`
 }
 
 type Expense struct {
@@ -332,29 +335,36 @@ func handleSales(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		mu.Lock()
-		var plant *Plant
-		for i := range db.Plants {
-			if strings.EqualFold(db.Plants[i].Name, s.PlantName) {
-				plant = &db.Plants[i]
-				break
+
+		if !s.SkipStock {
+			// Обычная продажа — ищем растение и списываем со склада
+			var plant *Plant
+			for i := range db.Plants {
+				if strings.EqualFold(db.Plants[i].Name, s.PlantName) {
+					plant = &db.Plants[i]
+					break
+				}
 			}
+			if plant == nil {
+				mu.Unlock()
+				http.Error(w, "Растение не найдено на складе", http.StatusBadRequest)
+				return
+			}
+			if s.Qty > plant.Qty {
+				mu.Unlock()
+				http.Error(w, fmt.Sprintf("На складе только %d шт.", plant.Qty), http.StatusBadRequest)
+				return
+			}
+			plant.Qty -= s.Qty
 		}
-		if plant == nil {
-			mu.Unlock()
-			http.Error(w, "Растение не найдено на складе", http.StatusBadRequest)
-			return
-		}
-		if s.Qty > plant.Qty {
-			mu.Unlock()
-			http.Error(w, fmt.Sprintf("На складе только %d шт.", plant.Qty), http.StatusBadRequest)
-			return
-		}
+		// Если SkipStock == true — просто записываем продажу без проверки склада.
+		// Название товара вводится свободным текстом (услуга, прочее и т.д.)
+
 		s.ID = nextID()
 		s.Total = float64(s.Qty) * s.Price
 		if s.Date == "" {
 			s.Date = today()
 		}
-		plant.Qty -= s.Qty
 		db.Sales = append(db.Sales, s)
 		if err := saveDB(); err != nil {
 			mu.Unlock()
@@ -624,61 +634,206 @@ func handleImportCSV(w http.ResponseWriter, r *http.Request) {
 		category = "Лиственные"
 	}
 
+	// parseNum понимает "25.50", "25,50", "1 000" (русский формат Google Sheets).
+	// "—" или любой нечисловой текст вернёт ошибку — обработаем отдельно.
+	parseNum := func(s string) (float64, error) {
+		s = strings.TrimSpace(s)
+		s = strings.ReplaceAll(s, "\u00a0", "") // неразрывный пробел
+		s = strings.ReplaceAll(s, " ", "")
+		s = strings.ReplaceAll(s, ",", ".")
+		return strconv.ParseFloat(s, 64)
+	}
+
+	// cleanCell убирает BOM и лишние пробелы из ячейки
+	cleanCell := func(s string) string {
+		s = strings.TrimSpace(s)
+		s = strings.TrimPrefix(s, "\xef\xbb\xbf") // UTF-8 BOM
+		return s
+	}
+
+	// isHeaderOrTitle возвращает true если строка — заголовок, а не данные
+	isHeaderOrTitle := func(record []string) bool {
+		if len(record) == 0 {
+			return false
+		}
+		first := strings.ToLower(cleanCell(record[0]))
+		// Строки вроде "🌲 Хвойные растения — прайс-лист" или "№"
+		if strings.Contains(first, "растени") || strings.Contains(first, "прайс") ||
+			strings.Contains(first, "список") || first == "№" || first == "#" {
+			return true
+		}
+		// Строка "Наименование" в любом столбце
+		for _, cell := range record {
+			if strings.Contains(strings.ToLower(cleanCell(cell)), "наименование") {
+				return true
+			}
+		}
+		return false
+	}
+
 	reader := csv.NewReader(file)
 	reader.LazyQuotes = true
 	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = -1
 
-	imported, skipped, lineNum := 0, 0, 0
+	// Индексы колонок — будем определять из заголовка.
+	// -1 = "колонка не найдена"
+	nameIdx  := -1
+	qtyIdx   := -1
+	priceIdx := -1
+	sizeIdx  := -1
+	headerParsed := false
+
+	// detectHeader читает строку заголовка и находит индексы колонок по ключевым словам
+	detectHeader := func(record []string) {
+		for i, raw := range record {
+			cell := strings.ToLower(cleanCell(raw))
+			switch {
+			case strings.Contains(cell, "наименование") || strings.Contains(cell, "название"):
+				nameIdx = i
+			case strings.Contains(cell, "наличие") || strings.Contains(cell, "кол-во") ||
+				strings.Contains(cell, "количество") || strings.Contains(cell, "шт"):
+				qtyIdx = i
+			case strings.Contains(cell, "цена") || strings.Contains(cell, "стоимость"):
+				priceIdx = i
+			case strings.Contains(cell, "размер") || strings.Contains(cell, "контейнер"):
+				sizeIdx = i
+			}
+		}
+		headerParsed = nameIdx >= 0
+	}
+
+	imported, skipped := 0, 0
 	mu.Lock()
+
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
+			slog.Warn("CSV: пропускаем строку с ошибкой", "err", err)
 			continue
 		}
-		lineNum++
-		if len(record) < 4 {
+		if len(record) == 0 {
 			continue
 		}
-		name := strings.TrimSpace(record[1])
-		if name == "" || name == "Наименование" || strings.HasPrefix(name, "ИТОГО") {
+
+		// Убираем BOM из первой ячейки
+		record[0] = cleanCell(record[0])
+
+		// Пропускаем строки-заголовки и строки-тайтлы
+		if isHeaderOrTitle(record) {
+			// Попробуем найти в ней колонки
+			detectHeader(record)
 			continue
 		}
-		if lineNum == 1 {
-			continue
+
+		// Если заголовок ещё не нашли — пробуем эту строку как заголовок
+		if !headerParsed {
+			detectHeader(record)
+			if headerParsed {
+				continue // это была строка заголовка
+			}
 		}
-		size := strings.TrimSpace(record[2])
-		priceStr := strings.TrimSpace(record[3])
-		qtyStr := ""
-		if len(record) >= 5 {
-			qtyStr = strings.TrimSpace(record[4])
+
+		// Если nameIdx всё ещё не найден — пробуем угадать по структуре:
+		// обычно формат [№, Название, ...], значит название в колонке 1
+		if nameIdx < 0 {
+			if len(record) >= 2 {
+				if _, numErr := strconv.Atoi(strings.TrimSpace(record[0])); numErr == nil {
+					nameIdx = 1
+				} else {
+					nameIdx = 0
+				}
+			}
 		}
-		price, err := strconv.ParseFloat(priceStr, 64)
-		if err != nil {
+
+		if nameIdx < 0 || nameIdx >= len(record) {
 			skipped++
 			continue
 		}
-		qty := 0
-		if qtyStr != "" {
-			qty, _ = strconv.Atoi(qtyStr)
+
+		name := cleanCell(record[nameIdx])
+		nameLower := strings.ToLower(name)
+
+		// Пропускаем пустые строки и итоговые строки
+		if name == "" ||
+			strings.HasPrefix(nameLower, "итого") ||
+			strings.HasPrefix(nameLower, "всего") {
+			continue
 		}
+
+		// Читаем количество
+		newQty := -1 // -1 = "не менять существующее"
+		if qtyIdx >= 0 && qtyIdx < len(record) {
+			if q, err := parseNum(record[qtyIdx]); err == nil && q >= 0 {
+				newQty = int(q)
+			}
+			// "—" и другие нечисловые значения оставляют newQty = -1
+		} else if qtyIdx < 0 {
+			// Если колонка количества не найдена в заголовке — ищем число
+			// в последнем столбце (часто бывает именно так)
+			for col := len(record) - 1; col > nameIdx; col-- {
+				if q, err := parseNum(record[col]); err == nil && q >= 0 && q < 100000 {
+					// Проверяем что это не цена (цены обычно > 1, а кол-во тоже > 1,
+					// но если колонок ровно 3 и нет priceIdx — берём последнюю)
+					if priceIdx < 0 {
+						newQty = int(q)
+					}
+					break
+				}
+			}
+		}
+
+		// Читаем цену (если есть колонка)
+		newPrice := -1.0
+		if priceIdx >= 0 && priceIdx < len(record) {
+			if p, err := parseNum(record[priceIdx]); err == nil && p > 0 {
+				newPrice = p
+			}
+		}
+
+		// Читаем размер (если есть колонка)
+		newSize := ""
+		if sizeIdx >= 0 && sizeIdx < len(record) {
+			newSize = cleanCell(record[sizeIdx])
+		}
+
+		// Обновляем или создаём растение
 		found := false
 		for i, p := range db.Plants {
 			if strings.EqualFold(p.Name, name) {
-				db.Plants[i].Price = price
-				db.Plants[i].Qty = qty
-				db.Plants[i].Size = size
+				if newQty >= 0 {
+					db.Plants[i].Qty = newQty
+				}
+				if newPrice > 0 {
+					db.Plants[i].Price = newPrice
+				}
+				if newSize != "" {
+					db.Plants[i].Size = newSize
+				}
 				found = true
 				imported++
 				break
 			}
 		}
 		if !found {
+			qty := 0
+			if newQty >= 0 {
+				qty = newQty
+			}
+			plantPrice := 0.0
+			if newPrice > 0 {
+				plantPrice = newPrice
+			}
 			db.Plants = append(db.Plants, Plant{
-				ID: nextID(), Name: name, Category: category,
-				Size: size, Price: price, Qty: qty,
+				ID:       nextID(),
+				Name:     name,
+				Category: category,
+				Size:     newSize,
+				Price:    plantPrice,
+				Qty:      qty,
 			})
 			imported++
 		}
@@ -949,6 +1104,12 @@ func router(w http.ResponseWriter, r *http.Request) {
 	case path == "/api/import/csv":
 		handleImportCSV(w, r)
 	default:
+		// Для HTML-файлов запрещаем кэширование — браузер всегда будет
+		// запрашивать свежую версию с сервера.
+		if path == "/" || strings.HasSuffix(path, ".html") {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+		}
 		http.FileServer(http.Dir("./static")).ServeHTTP(w, r)
 	}
 }

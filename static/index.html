@@ -93,6 +93,12 @@
     .proj-plants-detail{font-size:12px;color:#9097a8;margin-top:3px}
     .rev-split{display:flex;gap:8px;align-items:center;margin-top:6px}
     .rev-split span{font-size:11px;color:#9097a8}
+    /* Инлайн-редактирование ячеек таблицы склада */
+    .editable{cursor:pointer;border-radius:4px;padding:2px 4px;margin:-2px -4px;transition:background .15s}
+    .editable:hover{background:#f0f9f0;outline:1px dashed #4CAF50}
+    .editable::after{content:' ✎';font-size:10px;color:#b0bec5;opacity:0}
+    .editable:hover::after{opacity:1}
+    .inline-input{width:90px;padding:3px 6px;font-size:13px;border:1.5px solid #4CAF50;border-radius:5px;outline:none;font-family:inherit;color:#1a1a2e}
   </style>
 </head>
 <body>
@@ -705,23 +711,107 @@ async function addExpense() {
 async function delExpense(id) { await fetch(`/api/expenses/${id}`,{method:'DELETE'}); loadExpenses(); }
 
 // ─── СКЛАД ───────────────────────────────────────────────
+
+// Кэш растений — нужен для инлайн-редактирования, чтобы знать все поля при PUT-запросе
+// (бэкенд ожидает полный объект, а не только изменённое поле)
+let stockPlants = [];
+
 async function loadStock() {
-  const plants = await fetch('/api/plants').then(r=>r.json());
-  const low  = plants.filter(p=>p.qty<5&&p.qty>0).length;
-  const zero = plants.filter(p=>p.qty===0).length;
+  stockPlants = await fetch('/api/plants').then(r=>r.json());
+  const low  = stockPlants.filter(p=>p.qty<5&&p.qty>0).length;
+  const zero = stockPlants.filter(p=>p.qty===0).length;
+  const noPrice = stockPlants.filter(p=>p.price===0).length;
   document.getElementById('stock-info').textContent =
-    `${plants.length} позиций${low?` · ${low} заканчивается`:''}${zero?` · ${zero} нет`:''}`;
+    `${stockPlants.length} позиций`+
+    (noPrice ? ` · ⚠ ${noPrice} без цены (нажми чтобы изменить)` : '')+
+    (low ? ` · ${low} заканчивается` : '')+
+    (zero ? ` · ${zero} нет` : '');
+
   const tb = document.getElementById('stock-body');
-  tb.innerHTML = plants.length
-    ? [...plants].sort((a,b)=>a.qty-b.qty).map(p=>`<tr>
-        <td><strong>${p.name}</strong></td>
-        <td>${catBadge(p.category)}</td>
-        <td>${p.size||'—'}</td>
-        <td>${fmt(p.price)}</td>
-        <td>${qtyBadge(p.qty)}</td>
-        <td><button class="btn-del" onclick="delPlant(${p.id})">×</button></td>
-      </tr>`).join('')
+  tb.innerHTML = stockPlants.length
+    ? [...stockPlants].sort((a,b)=>a.qty-b.qty).map(p => {
+        // Ячейки цены, размера и кол-ва — кликабельные.
+        // data-id / data-field / data-val хранят нужную инфу для редактирования.
+        // Аналогия: это как Excel-ячейка — кликнул, ввёл новое значение, нажал Enter.
+        const priceCell = `<span class="editable"
+          title="Нажми чтобы изменить цену"
+          onclick="startEdit(this,${p.id},'price',${p.price})"
+          >${p.price > 0 ? fmt(p.price) : '<span style="color:#c62828;font-weight:600">0 руб. ✎</span>'}</span>`;
+        const sizeCell = `<span class="editable"
+          title="Нажми чтобы изменить размер"
+          onclick="startEdit(this,${p.id},'size',${JSON.stringify(p.size||'')})"
+          >${p.size||'<span style="color:#b0bec5">—</span>'}</span>`;
+        const qtyCell = `<span class="editable"
+          title="Нажми чтобы изменить количество"
+          onclick="startEdit(this,${p.id},'qty',${p.qty})"
+          >${qtyBadge(p.qty)}</span>`;
+        return `<tr>
+          <td><strong>${p.name}</strong></td>
+          <td>${catBadge(p.category)}</td>
+          <td>${sizeCell}</td>
+          <td>${priceCell}</td>
+          <td>${qtyCell}</td>
+          <td><button class="btn-del" onclick="delPlant(${p.id})">×</button></td>
+        </tr>`;
+      }).join('')
     : '<tr><td colspan="6" class="empty">Импортируй CSV или добавь вручную</td></tr>';
+}
+
+// startEdit — превращает ячейку в поле ввода для редактирования
+// el         — span.editable который кликнули
+// plantId    — id растения в базе
+// field      — 'price', 'size' или 'qty'
+// currentVal — текущее значение (число или строка)
+function startEdit(el, plantId, field, currentVal) {
+  // Находим растение в кэше — нам нужен полный объект для PUT
+  const plant = stockPlants.find(p => p.id === plantId);
+  if (!plant) return;
+
+  const isNum = field === 'price' || field === 'qty';
+  const input = document.createElement('input');
+  input.className = 'inline-input';
+  input.type = isNum ? 'number' : 'text';
+  input.min = isNum ? '0' : undefined;
+  input.step = field === 'price' ? '0.5' : '1';
+  input.value = currentVal;
+  // Клик по инпуту не должен всплывать до span (иначе снова откроет редактор)
+  input.onclick = e => e.stopPropagation();
+
+  const save = async () => {
+    const raw = isNum ? parseFloat(input.value) : input.value.trim();
+    // Если ввели то же самое — просто перерисовываем без запроса на сервер
+    if (raw === currentVal || (isNum && isNaN(raw))) { loadStock(); return; }
+
+    // Обновляем нужное поле в копии объекта растения
+    // Остальные поля (name, category и т.д.) берём из кэша, чтобы не потерять
+    const updated = { ...plant, [field]: isNum ? (isNaN(raw) ? 0 : raw) : raw };
+
+    const res = await fetch(`/api/plants/${plantId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    });
+
+    if (res.ok) {
+      plant[field] = updated[field]; // обновляем кэш сразу, не ждём reload
+    } else {
+      alert('Ошибка сохранения: ' + await res.text());
+    }
+    loadStock(); // перерисовываем таблицу
+  };
+
+  // Сохраняем по потере фокуса или по Enter; отменяем по Escape
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { input.blur(); }
+    if (e.key === 'Escape') { loadStock(); } // отменить — перерисовать без изменений
+  });
+
+  // Заменяем содержимое span на поле ввода и сразу фокусируем
+  el.innerHTML = '';
+  el.appendChild(input);
+  input.focus();
+  input.select(); // выделяем текст — удобно сразу начать вводить
 }
 
 async function addPlant() {

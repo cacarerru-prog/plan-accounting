@@ -1,6 +1,18 @@
+<div align="center">
+
 # Plant Accounting
 
 **Инструмент учёта продаж для бизнеса на озеленении**
+
+[![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://golang.org)
+[![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen?style=flat-square)](go.mod)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+
+</div>
+
+---
+
+Это не учебный проект — это инструмент, которым пользуются каждый день.
 
 Компания продаёт растения на рынке, через Instagram, Telegram и Куфар, а также озеленяет заведения общественного питания. Excel не справлялся: продажи из разных каналов, склад, расходы, зарплаты по проценту от прибыли — всё в одном месте. Plant Accounting заменил таблицы одним бинарником.
 
@@ -29,34 +41,51 @@
 ```bash
 git clone https://github.com/cacarerru-prog/plant-accounting.git
 cd plant-accounting
-go run main.go
+go run ./cmd/server
 ```
 
 Открой браузер: [http://localhost:8080](http://localhost:8080)
 
 Требования: Go 1.21+. Никаких баз данных, брокеров, контейнеров и `npm install`.
 
+Прогнать тесты:
+```bash
+go test ./... -cover
+```
+
 ---
 
 ## Архитектура
 
-Весь сервер в одном файле `main.go` — это сознательное решение для инструмента такого масштаба: меньше навигации, проще поддержка.
-
 ```
-main.go
-├── Models      — Plant, Sale, Expense, Employee, Project, ProjectPlant
-├── Storage     — чтение/запись data.json, sync.Mutex для конкурентного доступа
-├── Handlers    — HTTP-обработчики, по одному на каждый ресурс
-└── Router      — маршрутизация через стандартный net/http
+cmd/
+└── server/main.go        — точка входа, graceful shutdown
+internal/
+├── models/               — доменные структуры (Plant, Sale, Expense, ...)
+├── storage/              — Store с sync.RWMutex, JSON-файл, бэкапы, CSV-импорт, статистика
+│   ├── storage.go        — Load / SaveNow / rotateBackup
+│   ├── plants.go         — CRUD растений
+│   ├── sales.go          — продажи со списанием склада
+│   ├── projects.go       — проекты озеленения (атомарное списание)
+│   ├── expenses.go       — расходы
+│   ├── employees.go      — сотрудники
+│   ├── stats.go          — агрегаты за период
+│   ├── import_csv.go     — импорт прайс-листа из Google Sheets
+│   └── *_test.go         — 19+ unit-тестов
+└── api/                  — HTTP-обработчики (по файлу на ресурс)
+static/
+└── index.html            — SPA в одном файле (vanilla JS, нулевые зависимости)
 ```
 
 **Технические решения:**
 
-- `context.Context` в каждой I/O-операции — корректная отмена и таймауты
-- `log/slog` — структурное логирование в JSON, стандарт Go 1.21+
-- `sync.RWMutex` — безопасный конкурентный доступ к данным без гонок
-- Graceful Shutdown — сервер дожидается in-flight запросов при `SIGTERM`/`SIGINT`
-- Нулевые зависимости — только стандартная библиотека, `go.sum` пустой
+- **Атомарная запись** — `data.json.tmp` + `os.Rename`, файл не повредится при крэше в момент сохранения
+- **Бэкапы с ротацией** — раз в час snapshot в `backups/`, держим 30 последних
+- **`log/slog`** — структурное логирование, стандарт Go 1.21+
+- **`sync.RWMutex`** — конкурентный доступ без гонок, отдельные RLock для чтения
+- **Graceful Shutdown** — сервер дожидается in-flight запросов и финально сохраняет данные при `SIGTERM`/`SIGINT`
+- **Нулевые зависимости** — только стандартная библиотека, `go.sum` пустой
+- **Покрытие тестами** — 46% в `internal/storage` (ключевая бизнес-логика)
 
 ---
 
@@ -91,22 +120,9 @@ main.go
 
 ---
 
-## Структура
-
-```
-plant-accounting/
-├── main.go       # Сервер: модели, хранилище, хендлеры, роутер
-├── data.json     # База данных (создаётся при первом запуске)
-├── go.mod        # Go-модуль
-└── static/
-    └── index.html  # Фронтенд
-```
-
----
-
 ## Автор
 
-**Aliaksandr Kacheuski** 
+**Aliaksandr Kacheuski** — студент БГУИР (инженер по инфокоммуникациям), изучаю Go.  
 Этот инструмент написан для реального бизнеса и используется в повседневной работе.
 
 [github.com/cacarerru-prog](https://github.com/cacarerru-prog)

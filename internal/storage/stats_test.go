@@ -75,12 +75,62 @@ func TestCalcStats_TopPlants(t *testing.T) {
 	}
 }
 
+func TestCalcMonthlyTrend(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreatePlant(&models.Plant{Name: "Туя", Qty: 100, Price: 50})
+
+	_ = s.CreateSale(&models.Sale{PlantName: "Туя", Qty: 2, Price: 50, Date: "15.04.2026"})
+	_ = s.CreateSale(&models.Sale{PlantName: "Туя", Qty: 1, Price: 50, Date: "10.05.2026"})
+	_ = s.CreateExpense(&models.Expense{Category: "Закупка", Amount: 30, Date: "20.04.2026"})
+	// Расход 2025 года не должен попасть в тренд 2026.
+	_ = s.CreateExpense(&models.Expense{Category: "Закупка", Amount: 999, Date: "15.04.2025"})
+
+	points := s.CalcMonthlyTrend(2026)
+	if len(points) != 12 {
+		t.Fatalf("ожидаем 12 точек, получили %d", len(points))
+	}
+	// Апрель = index 3
+	if points[3].Revenue != 100 || points[3].Expenses != 30 || points[3].Profit != 70 {
+		t.Errorf("апрель 2026: Revenue=100/Expenses=30/Profit=70, получили %+v", points[3])
+	}
+	// Май = index 4
+	if points[4].Revenue != 50 {
+		t.Errorf("май 2026 Revenue: ожидаем 50, получили %v", points[4].Revenue)
+	}
+	// Январь не должен содержать данных 2025 года.
+	if points[0].Expenses != 0 {
+		t.Errorf("январь 2026: расходы должны быть 0, получили %v", points[0].Expenses)
+	}
+}
+
+func TestCalcMonthlyTrend_IncludesProjects(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreatePlant(&models.Plant{Name: "Туя", Qty: 100, Price: 50})
+
+	_ = s.CreateProject(&models.Project{
+		Client:    "Кафе",
+		Date:      "10.04.2026",
+		LaborCost: 200,
+		Plants:    []models.ProjectPlant{{PlantName: "Туя", Qty: 1, Price: 50}},
+	})
+
+	points := s.CalcMonthlyTrend(2026)
+	// 50 + 200 = 250
+	if points[3].Revenue != 250 {
+		t.Errorf("апрель 2026 с проектом: Revenue=250, получили %v", points[3].Revenue)
+	}
+}
+
 func TestCalcStats_SalariesFromProfit(t *testing.T) {
 	s := newTestStore(t)
 	_ = s.CreatePlant(&models.Plant{Name: "Туя", Qty: 100, Price: 50})
 	_ = s.CreateSale(&models.Sale{PlantName: "Туя", Qty: 10, Price: 50, Date: "15.04.2026"})
+	// Восстанавливаем сотрудников (helper их вычистил для изоляции).
+	_ = s.CreateEmployee(&models.Employee{Name: "Елена", Percent: 50})
+	_ = s.CreateEmployee(&models.Employee{Name: "Александр", Percent: 25})
+	_ = s.CreateEmployee(&models.Employee{Name: "Данила", Percent: 25})
 
-	// Profit = 500. Сотрудники по умолчанию: 50% + 25% + 25% = 100% → TotalSalaries = 500.
+	// Profit = 500. Сотрудники: 50% + 25% + 25% = 100% → TotalSalaries = 500.
 	st := s.CalcStats(4, 2026)
 	if st.TotalSalaries != 500 {
 		t.Errorf("TotalSalaries: ожидаем 500, получили %v", st.TotalSalaries)

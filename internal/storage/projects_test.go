@@ -100,3 +100,70 @@ func TestDeleteProject_NotFound(t *testing.T) {
 		t.Errorf("ожидаем ErrProjectNotFound, получили %v", err)
 	}
 }
+
+func TestCreateProject_PlantNotFound(t *testing.T) {
+	s := newTestStore(t)
+	proj := &models.Project{
+		Client: "Тест",
+		Plants: []models.ProjectPlant{{PlantName: "Несуществующее", Qty: 1, Price: 10}},
+	}
+	err := s.CreateProject(proj)
+	if err == nil || !strings.Contains(err.Error(), "не найдено") {
+		t.Errorf("ожидаем ошибку 'не найдено', получили %v", err)
+	}
+}
+
+func TestCreateProject_DefaultDate(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreatePlant(&models.Plant{Name: "Туя", Qty: 10})
+
+	proj := &models.Project{
+		Client: "Тест",
+		Plants: []models.ProjectPlant{{PlantName: "Туя", Qty: 1, Price: 50}},
+	}
+	if err := s.CreateProject(proj); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if proj.Date == "" {
+		t.Error("Date должен быть автозаполнен")
+	}
+}
+
+func TestListProjects_ReverseAndLimit(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreatePlant(&models.Plant{Name: "Туя", Qty: 100})
+
+	// Три проекта с разными клиентами — в ListProjects должны идти в обратном порядке.
+	for _, client := range []string{"A", "B", "C"} {
+		_ = s.CreateProject(&models.Project{
+			Client: client,
+			Plants: []models.ProjectPlant{{PlantName: "Туя", Qty: 1, Price: 10}},
+		})
+	}
+
+	all := s.ListProjects(0)
+	if len(all) != 3 || all[0].Client != "C" || all[2].Client != "A" {
+		t.Errorf("ожидаем порядок C,B,A, получили %+v", all)
+	}
+
+	limited := s.ListProjects(2)
+	if len(limited) != 2 || limited[0].Client != "C" {
+		t.Errorf("limit=2: ожидаем C первым, получили %+v", limited)
+	}
+}
+
+func TestSnapshot_IsIndependentCopy(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreatePlant(&models.Plant{Name: "Туя", Qty: 10, Price: 50})
+
+	snap := s.Snapshot()
+	if len(snap.Plants) != 1 {
+		t.Fatalf("ожидаем 1 растение в snapshot, получили %d", len(snap.Plants))
+	}
+
+	// Мутация снапшота не должна затронуть store.
+	snap.Plants[0].Name = "Mutated"
+	if s.ListPlants()[0].Name == "Mutated" {
+		t.Error("Snapshot должен быть независимой копией")
+	}
+}

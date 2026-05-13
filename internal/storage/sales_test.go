@@ -3,6 +3,7 @@ package storage
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"plants-app/internal/models"
@@ -109,5 +110,39 @@ func TestCreateSale_DefaultDate(t *testing.T) {
 
 	if sale.Date == "" {
 		t.Error("Date должен быть автозаполнен")
+	}
+}
+
+func TestListSales_ReverseAndLimit(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.CreatePlant(&models.Plant{Name: "Туя", Qty: 100, Price: 10})
+
+	// Создаём 3 продажи: A, B, C — в ListSales должны прийти как C, B, A.
+	for _, p := range []float64{1, 2, 3} {
+		_ = s.CreateSale(&models.Sale{PlantName: "Туя", Qty: 1, Price: p})
+	}
+
+	all := s.ListSales(0)
+	if len(all) != 3 || all[0].Price != 3 || all[2].Price != 1 {
+		t.Errorf("ожидаем обратный порядок [3,2,1], получили %+v", all)
+	}
+
+	limited := s.ListSales(2)
+	if len(limited) != 2 || limited[0].Price != 3 {
+		t.Errorf("limit=2: ожидаем 2 элемента с Price 3 первым, получили %+v", limited)
+	}
+}
+
+func TestDeleteSale_NotFound(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.DeleteSale(999); !errors.Is(err, ErrSaleNotFound) {
+		t.Errorf("ожидаем ErrSaleNotFound, получили %v", err)
+	}
+}
+
+func TestErrInsufficientQty_Error(t *testing.T) {
+	e := &ErrInsufficientQty{Available: 3}
+	if !strings.Contains(e.Error(), "3") {
+		t.Errorf("Error() должен упоминать количество, получили %q", e.Error())
 	}
 }

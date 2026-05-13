@@ -10,6 +10,7 @@ import (
 
 // newTestStore — создаёт временный Store с tmp-файлом для изоляции тестов.
 // Backup'ы отключаются, чтобы не засорять рабочую директорию.
+// Дефолтные сотрудники чистятся, чтобы тесты были независимы от автозаполнения.
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	tmp := t.TempDir() + "/data.json"
@@ -18,6 +19,9 @@ func newTestStore(t *testing.T) *Store {
 	if err := s.Load(); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
+	s.mu.Lock()
+	s.db.Employees = nil
+	s.mu.Unlock()
 	return s
 }
 

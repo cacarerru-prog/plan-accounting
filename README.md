@@ -2,48 +2,48 @@
 
 # Plants Accounting
 
-**Внутренний инструмент учёта для тепличного бизнеса**
+**Internal accounting tool for a plant-nursery business**
 
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://golang.org)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen?style=flat-square)](go.mod)
-[![Tests](https://img.shields.io/badge/tests-22%20passing-brightgreen?style=flat-square)]()
-[![Coverage](https://img.shields.io/badge/coverage-40%25-yellowgreen?style=flat-square)]()
+[![Tests](https://img.shields.io/badge/tests-109%20passing-brightgreen?style=flat-square)]()
+[![Coverage](https://img.shields.io/badge/coverage-84%25-brightgreen?style=flat-square)]()
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
 </div>
 
 ---
 
-**Рабочий инструмент** для реального бизнеса по продаже растений и озеленению заведений общественного питания. Заменил Excel-таблицы одним Go-бинарником без зависимостей: продажи по каналам (рынок, Instagram, Telegram, Куфар), проекты озеленения, склад с авто-списанием, расходы и распределение прибыли по долям совладельцев.
+A **production tool** built for a real plant-nursery and landscaping business that serves cafés and restaurants. Replaces a stack of Excel sheets with a single zero-dependency Go binary: retail sales across multiple channels (market, Instagram, Telegram, Kufar), landscaping projects, automatic stock deduction, expense tracking, and profit-share calculation for the co-owners.
 
-Один пользователь — администратор бизнеса. Никакой аутентификации: запускается локально или на внутреннем сервере. UI на vanilla JS — никакого `npm install`, никакого билд-степа, никакой ноды.
+Single-user by design: runs locally or on a small internal server, no authentication, no SaaS, no `npm install`. The UI is plain HTML/CSS/JS — no build step, no Node toolchain.
 
 ---
 
-## Возможности
+## Features
 
-### Учёт
-- **Склад** — каталог растений с категориями, размером, ценой и количеством. Поддерживает inline-редактирование любого поля. Атомарное списание при продаже/проекте.
-- **Розничные продажи** — учёт по каналам с фильтрацией и поиском. Режим `skip_stock` для услуг и товаров не из каталога.
-- **Проекты озеленения** — заказы для заведений: клиент, состав растений, стоимость работы. При создании склад списывается автоматически, при удалении возвращается.
-- **Расходы** — по 8 категориям (закупка, аренда, транспорт, реклама, ...) с inline-формой ввода.
-- **CSV-импорт** — загрузка прайс-листа из Google Sheets, 3-шаговый flow с диффом против существующего склада.
+### Accounting
+- **Inventory** — plant catalog with category, size, price and quantity. Inline editing for every field. Atomic stock deduction on sales and projects.
+- **Retail sales** — recorded per sales channel with filtering and search. `skip_stock` mode for services and off-catalog items that should not touch the inventory.
+- **Landscaping projects** — orders for cafés and restaurants: client, list of plants used, labor cost. Plants are deducted from stock on creation and returned on delete.
+- **Expenses** — eight categories (purchasing, rent, transport, advertising, ...) with an inline entry form.
+- **CSV import** — load a price list from Google Sheets via a 3-step flow that diffs against the current catalog.
 
-### Аналитика
-- **Дашборд** — 4 KPI-карточки (выручка, расходы, прибыль, заказы) с дельтой к прошлому периоду. Area chart продаж по 12 месяцам. Donut по каналам. Топ-5 растений.
-- **Зарплаты** — автоматический расчёт по проценту от чистой прибыли. Валидация суммы долей = 100%.
-- **Бэкапы** — список резервных копий с метаданными, доступен в настройках.
+### Analytics
+- **Dashboard** — four KPI cards (revenue, expenses, profit, orders) with delta to the previous period. 12-month sales area chart. Channel donut. Top-5 plants.
+- **Salaries** — automatic split of net profit by configurable percentages, validated to sum to 100%.
+- **Backups** — list of rotating snapshots with metadata, available in settings.
 
 ### UX
-- Дизайн-система на CSS custom properties (Inter, accent green, тёмный сайдбар)
-- 8 страниц, slide-in панели для создания продажи/проекта
-- Toast-уведомления, confirm-модалки на деструктивные действия
-- Row fade-in с stagger, flash на новых строках
-- Keyboard-friendly: Enter в формах, Esc закрывает панели
+- Design system on CSS custom properties (Inter, accent green, dark sidebar)
+- Eight pages, slide-in panels for creating sales and projects
+- Toast notifications, confirm modals for destructive actions
+- Row fade-in with stagger, flash highlight on freshly created rows
+- Keyboard-friendly: Enter submits forms, Esc closes panels
 
 ---
 
-## Быстрый старт
+## Quick start
 
 ```bash
 git clone https://github.com/cacarerru-prog/plan-accounting.git
@@ -51,136 +51,155 @@ cd plan-accounting
 go run ./cmd/server
 ```
 
-Открой [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000).
 
-Свой порт:
+Custom port:
 ```bash
 PORT=8080 go run ./cmd/server
 ```
 
-Прогнать тесты:
+Run the tests:
 ```bash
 go test ./... -cover
 ```
 
-Сборка статического бинарника:
+Build a static binary:
 ```bash
 go build -o plants ./cmd/server
 ./plants
 ```
 
-**Требования:** Go 1.21+. Никаких баз данных, брокеров, контейнеров.
+**Requirements:** Go 1.21+. No database, no message broker, no container runtime.
 
 ---
 
-## Архитектура
+## Architecture
 
 ```
 cmd/
-└── server/main.go        — точка входа, graceful shutdown, конфиг по env
+└── server/main.go        — entry point, graceful shutdown, env-based config
 internal/
-├── models/               — доменные структуры (Plant, Sale, Expense, Project, Employee)
-├── storage/              — Store с sync.RWMutex, JSON-файл, бэкапы, агрегаты
-│   ├── storage.go        — Load / SaveNow / атомарная запись / rotateBackup
-│   ├── plants.go         — CRUD растений, защита от дубликатов
-│   ├── sales.go          — продажи со списанием склада, ErrInsufficientQty
-│   ├── projects.go       — проекты, атомарное списание нескольких позиций
-│   ├── expenses.go       — расходы
-│   ├── employees.go      — совладельцы (получатели долей прибыли)
-│   ├── stats.go          — агрегаты за период + дельта к прошлому + 12-месячный тренд
-│   ├── backups.go        — список snapshot-файлов
-│   ├── import_csv.go     — импорт прайс-листа из Google Sheets
-│   └── *_test.go         — 22 unit-теста, покрытие 40%
-└── api/                  — HTTP-обработчики (по файлу на ресурс)
+├── models/               — domain types (Plant, Sale, Expense, Project, Employee)
+├── storage/              — Store with sync.RWMutex, JSON file, backups, aggregates
+│   ├── storage.go        — Load / SaveNow / atomic write / rotateBackup
+│   ├── plants.go         — plant CRUD with duplicate-name protection
+│   ├── sales.go          — sales with stock deduction, ErrInsufficientQty
+│   ├── projects.go       — projects with atomic multi-plant deduction
+│   ├── expenses.go       — expenses
+│   ├── employees.go      — co-owners (profit-share recipients)
+│   ├── stats.go          — period aggregates + delta to previous period + 12-month trend
+│   ├── backups.go        — list of snapshot files
+│   ├── import_csv.go     — Google Sheets price-list import
+│   └── *_test.go         — 109 unit tests, ~84% coverage
+└── api/                  — HTTP handlers (one file per resource)
 static/
-└── index.html            — SPA в одном файле (vanilla HTML/CSS/JS, 0 зависимостей)
+└── index.html            — single-file SPA (vanilla HTML/CSS/JS, zero deps)
 ```
 
-### Технические решения
+### Engineering decisions
 
-- **Атомарная запись** — `data.json.tmp` + `os.Rename` гарантируют, что файл не повредится при крэше во время сохранения.
-- **Бэкапы с ротацией** — раз в час делается snapshot в `backups/`, держится 30 последних, чистится автоматически.
-- **`log/slog`** — структурное логирование, стандарт Go 1.21+. Без дополнительных библиотек.
-- **`sync.RWMutex`** — конкурентный доступ без гонок. Чтение под `RLock`, запись под `Lock`. `Snapshot()` копирует данные под `RLock` для подсчёта статистики без блокировки писателей.
-- **Graceful Shutdown** — сервер ждёт in-flight запросы и финально сохраняет состояние при `SIGTERM`/`SIGINT`.
-- **Монотонная интерполяция** на графике (Fritsch-Carlson) — кривая не уходит ниже нуля при разреженных данных, в отличие от наивной cubic-bezier сглажки.
-- **Нулевые зависимости** — только стандартная библиотека Go. `go.sum` отсутствует.
+- **Atomic writes** — `data.json.tmp` + `os.Rename` guarantee the file cannot end up half-written if the process crashes mid-save.
+- **Rotating backups** — once an hour a snapshot is written to `backups/`, the last 30 are kept and older ones are pruned automatically.
+- **`log/slog`** — structured logging from the Go 1.21+ standard library, no third-party logger.
+- **`sync.RWMutex`** — race-free concurrent access. Reads run under `RLock`, writes under `Lock`. `Snapshot()` copies the data under `RLock` so the stats computation never blocks writers.
+- **Graceful shutdown** — the server waits for in-flight requests and flushes state on `SIGTERM` / `SIGINT`.
+- **Monotone interpolation** (Fritsch–Carlson) on the trend chart so the curve never dips below zero with sparse data, unlike naive cubic-bezier smoothing.
+- **Zero dependencies** — only the Go standard library. There is no `go.sum`.
 
 ---
 
 ## API
 
-Все эндпоинты возвращают JSON, принимают JSON в теле для `POST`/`PUT`.
+All endpoints return JSON and accept JSON bodies on `POST` / `PUT`.
 
-### Сущности
+### Resources
 
-| Метод    | Путь                  | Описание                                            |
-|----------|-----------------------|-----------------------------------------------------|
-| `GET`    | `/api/plants`         | Список растений                                     |
-| `POST`   | `/api/plants`         | Добавить растение (защита от дубликатов по имени)   |
-| `PUT`    | `/api/plants/:id`     | Обновить растение                                   |
-| `DELETE` | `/api/plants/:id`     | Удалить растение                                    |
-| `GET`    | `/api/sales`          | История продаж (до 2000 последних)                  |
-| `POST`   | `/api/sales`          | Добавить продажу (атомарное списание со склада)     |
-| `DELETE` | `/api/sales/:id`      | Удалить продажу (возврат количества на склад)       |
-| `GET`    | `/api/projects`       | Список проектов                                     |
-| `POST`   | `/api/projects`       | Создать проект (атомарное списание всех позиций)    |
-| `DELETE` | `/api/projects/:id`   | Удалить проект (возврат позиций на склад)           |
-| `GET`    | `/api/expenses`       | Список расходов                                     |
-| `POST`   | `/api/expenses`       | Добавить расход                                     |
-| `DELETE` | `/api/expenses/:id`   | Удалить расход                                      |
-| `GET`    | `/api/employees`      | Список совладельцев и их долей                      |
-| `POST`   | `/api/employees`      | Добавить                                            |
-| `PUT`    | `/api/employees/:id`  | Обновить долю или имя                               |
-| `DELETE` | `/api/employees/:id`  | Удалить                                             |
+| Method   | Path                  | Description                                              |
+|----------|-----------------------|----------------------------------------------------------|
+| `GET`    | `/api/plants`         | List plants                                              |
+| `POST`   | `/api/plants`         | Create a plant (duplicate-name protected)                |
+| `PUT`    | `/api/plants/:id`     | Update a plant                                           |
+| `DELETE` | `/api/plants/:id`     | Delete a plant                                           |
+| `GET`    | `/api/sales`          | Sales history (up to 2000 latest)                        |
+| `POST`   | `/api/sales`          | Create a sale (atomic stock deduction)                   |
+| `DELETE` | `/api/sales/:id`      | Delete a sale (returns the quantity to stock)            |
+| `GET`    | `/api/projects`       | List projects                                            |
+| `POST`   | `/api/projects`       | Create a project (atomic deduction of all line items)    |
+| `DELETE` | `/api/projects/:id`   | Delete a project (returns all line items to stock)       |
+| `GET`    | `/api/expenses`       | List expenses                                            |
+| `POST`   | `/api/expenses`       | Create an expense                                        |
+| `DELETE` | `/api/expenses/:id`   | Delete an expense                                        |
+| `GET`    | `/api/employees`      | List co-owners and their profit shares                   |
+| `POST`   | `/api/employees`      | Create a co-owner                                        |
+| `PUT`    | `/api/employees/:id`  | Update share or name                                     |
+| `DELETE` | `/api/employees/:id`  | Delete a co-owner                                        |
 
-### Аналитика и обслуживание
+### Analytics and maintenance
 
-| Метод    | Путь                          | Описание                                              |
-|----------|-------------------------------|-------------------------------------------------------|
-| `GET`    | `/api/stats?month=M&year=Y`   | KPI за период + дельта к прошлому месяцу + зарплаты   |
-| `GET`    | `/api/stats/monthly?year=Y`   | 12 точек по месяцам (выручка / расходы / прибыль)     |
-| `GET`    | `/api/backups`                | Список snapshot-файлов с метаданными                  |
-| `POST`   | `/api/import/csv`             | Импорт прайс-листа из CSV (multipart)                 |
-
----
-
-## Стек
-
-| Слой     | Технология                                       |
-|----------|--------------------------------------------------|
-| Backend  | Go 1.21 · `net/http` · `encoding/json` · `log/slog` |
-| Frontend | Vanilla HTML / CSS / JavaScript · SVG-чарты      |
-| Storage  | JSON-файл с атомарной записью + бэкапы           |
-| Deps     | 0 (только stdlib)                                |
+| Method   | Path                          | Description                                                |
+|----------|-------------------------------|------------------------------------------------------------|
+| `GET`    | `/api/stats?month=M&year=Y`   | KPIs for the period + delta vs. previous month + salaries  |
+| `GET`    | `/api/stats/monthly?year=Y`   | 12 monthly points (revenue / expenses / profit)            |
+| `GET`    | `/api/backups`                | List of snapshot files with metadata                       |
+| `POST`   | `/api/import/csv`             | Import a price list from CSV (multipart upload)            |
 
 ---
 
-## Скриншоты
+## Stack
 
-> Скрины положу в `docs/screenshots/` в следующих обновлениях.
-
----
-
-## Конфигурация
-
-| Переменная | Дефолт   | Назначение                       |
-|------------|----------|----------------------------------|
-| `PORT`     | `3000`   | Порт HTTP-сервера                |
-
-Файл данных — `data.json` рядом с бинарником. Бэкапы — в `backups/`.
+| Layer    | Technology                                            |
+|----------|-------------------------------------------------------|
+| Backend  | Go 1.21 · `net/http` · `encoding/json` · `log/slog`   |
+| Frontend | Vanilla HTML / CSS / JavaScript · hand-rolled SVG charts |
+| Storage  | JSON file with atomic writes + rotating backups       |
+| Deps     | 0 (standard library only)                             |
 
 ---
 
-## Лицензия
+## Testing
 
-MIT — см. [LICENSE](LICENSE).
+Coverage by package after `go test ./... -cover`:
+
+| Package              | Coverage |
+|----------------------|----------|
+| `internal/storage`   | 88.3%    |
+| `internal/api`       | 88.0%    |
+| `internal/models`    | 100%     |
+| **Total**            | **~84%** |
+
+Storage tests cover CRUD, atomic project deduction, stock restoration on delete,
+CSV import (Russian decimal comma, BOM, header detection, totals/subtotals skipping),
+period filtering, monthly trend, and backup rotation.
+API tests cover happy paths plus validation, error mapping (404 / 409 / 405),
+malformed JSON, and the multipart CSV upload flow.
 
 ---
 
-## Автор
+## Screenshots
 
-**Aliaksandr Kacheuski** — студент БГУИР (инженер по инфокоммуникациям), изучаю Go.
-Этот инструмент написан для реального семейного бизнеса и используется ежедневно.
+> Screenshots will be added under `docs/screenshots/` in a future update.
+
+---
+
+## Configuration
+
+| Variable | Default  | Purpose          |
+|----------|----------|------------------|
+| `PORT`   | `3000`   | HTTP server port |
+
+The data file is `data.json` next to the binary. Backups are written to `backups/`.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+---
+
+## Author
+
+**Aliaksandr Kacheuski** — telecom-engineering student at BSUIR (Minsk), learning Go.
+Built for a real family business and used daily.
 
 [github.com/cacarerru-prog](https://github.com/cacarerru-prog)
